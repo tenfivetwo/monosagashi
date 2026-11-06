@@ -37,7 +37,7 @@ http://127.0.0.1:8750/ を開く。スマホのカメラは https でないと�
 | 部品 | 版 | ライセンス | 場所 |
 |---|---|---|---|
 | onnxruntime-web | 1.22.0 | MIT（`vendor/ort/LICENSE`） | `vendor/ort` |
-| DINOv2 small（onnx-community の ONNX 版 `model_quantized.onnx`） | SHA-256 `C179F8F7F592449C4C1BCA4CD124A7538021428C5FFB89AFDE9503935B197EFB` | Apache-2.0（元の facebook/dinov2-small） | `model` |
+| DINOv2 small（onnx-community の ONNX 版 `model_quantized.onnx`） | SHA-256 `C179F8F7F592449C4C1BCA4CD124A7538021428C5FFB89AFDE9503935B197EFB` | Apache-2.0（`model/LICENSE`、出どころは `model/README.md`） | `model` |
 
 ## 判定の試験
 
