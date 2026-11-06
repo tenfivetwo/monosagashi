@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' blob: data:; media-src 'self' blob: mediastream:; connect-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; worker-src 'self' blob:; base-uri 'none'; form-action 'none'">
+<meta name="theme-color" content="#1f2a37">
+<title>物探しカメラ</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<script src="js/coi.js"></script>
+</head>
+<body>
+
+<!-- 持ち物の一覧 -->
+<section id="home" class="screen">
+  <header class="bar"><h1>物探しカメラ</h1></header>
+  <main class="page">
+    <ul id="items" class="items"></ul>
+    <div id="empty" class="empty" hidden>
+      <h2>なくす前に、撮っておく</h2>
+      <ol>
+        <li>なくしそうな物を登録します（3〜5方向から撮影）</li>
+        <li>なくしたら「探す」を押して、部屋にゆっくりかざします</li>
+        <li>似た物が映ると、枠と音で知らせます</li>
+      </ol>
+    </div>
+    <p class="note">写真も判定も、この端末の中だけで済みます。外へは送りません。<br>隠れている物（引き出しの中など）はカメラに映らないので見つけられません。</p>
+  </main>
+  <div class="foot"><button id="addBtn" class="primary wide" type="button">＋ 品物を登録する</button></div>
+</section>
+
+<!-- 登録 -->
+<section id="register" class="screen" hidden>
+  <header class="bar"><button id="regBack" class="plain" type="button" aria-label="戻る">←</button><h1>品物の登録</h1></header>
+  <main class="page">
+    <label class="field">名前
+      <input id="regName" type="text" maxlength="30" placeholder="例：家の鍵" autocomplete="off">
+    </label>
+    <div id="regPhotos" class="thumbs"></div>
+    <p id="regHint" class="note">違う向きから3〜5枚撮っておくと、どの向きで転がっていても見つけやすくなります。</p>
+    <div class="row">
+      <button id="regCamera" class="secondary" type="button">カメラで撮る</button>
+      <button id="regPick" class="secondary" type="button">写真を選ぶ</button>
+      <input id="regFile" type="file" accept="image/*" hidden>
+    </div>
+  </main>
+  <div class="foot"><button id="regSave" class="primary wide" type="button" disabled>保存する</button></div>
+</section>
+
+<!-- 撮影 -->
+<section id="shoot" class="screen dark" hidden>
+  <video id="shootVideo" class="cam" playsinline muted autoplay></video>
+  <div class="camTop"><button id="shootBack" class="ghost" type="button">やめる</button></div>
+  <div class="camBottom"><button id="shutter" class="shutter" type="button" aria-label="撮る"></button></div>
+</section>
+
+<!-- 枠の調整 -->
+<section id="crop" class="screen" hidden>
+  <header class="bar"><button id="cropBack" class="plain" type="button" aria-label="戻る">←</button><h1>品物を枠で囲む</h1></header>
+  <main class="page cropPage">
+    <canvas id="cropCanvas" class="cropCanvas"></canvas>
+    <p class="note">枠の角や中をドラッグして、品物がぴったり入るようにします。</p>
+  </main>
+  <div class="foot"><button id="cropOk" class="primary wide" type="button">この枠で追加</button></div>
+</section>
+
+<!-- 探す -->
+<section id="search" class="screen dark" hidden>
+  <video id="searchVideo" class="cam" playsinline muted autoplay></video>
+  <canvas id="stillCanvas" class="cam still" hidden></canvas>
+  <canvas id="overlay" class="overlay"></canvas>
+  <div class="camTop">
+    <button id="searchBack" class="ghost" type="button">やめる</button>
+    <div id="searchName" class="searchName"></div>
+    <button id="torch" class="ghost" type="button" hidden>ライト</button>
+  </div>
+  <div class="camBottom panel">
+    <div id="status" class="status" role="status" aria-live="polite">準備中…</div>
+    <div id="meter" class="meter"><span id="meterBar"></span></div>
+    <div class="row between">
+      <div class="seg" role="group" aria-label="感度">
+        <button type="button" data-sens="low">控えめ</button>
+        <button type="button" data-sens="mid" class="on">ふつう</button>
+        <button type="button" data-sens="high">敏感</button>
+      </div>
+      <button id="stillPick" class="ghost" type="button">写真で試す</button>
+      <input id="stillFile" type="file" accept="image/*" hidden>
+    </div>
+  </div>
+  <!-- 見つかったとき -->
+  <div id="found" class="sheet" hidden>
+    <h2>これですか？</h2>
+    <canvas id="foundCanvas" class="foundCanvas"></canvas>
+    <p id="foundNote" class="note"></p>
+    <div class="row">
+      <button id="foundNo" class="secondary grow" type="button">違う</button>
+      <button id="foundYes" class="primary grow" type="button">これだ！</button>
+    </div>
+  </div>
+</section>
+
+<!-- AI の準備 -->
+<div id="loading" class="loading" hidden>
+  <div class="loadingBox">
+    <div id="loadingText">AI を準備しています…</div>
+    <div class="meter"><span id="loadingBar"></span></div>
+    <div class="note">初回だけ約36MBを読み込みます。Wi-Fi をおすすめします。</div>
+  </div>
+</div>
+<div id="toast" class="toast" role="alert" hidden></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

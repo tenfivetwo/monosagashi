@@ -1,0 +1,5 @@
+# OS やエディタが作るファイル
+Thumbs.db
+desktop.ini
+.DS_Store
+node_modules/
