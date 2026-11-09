@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- ブラウザのタブ用（小さく表示されるので、icon.svg から印と光を省いて線を太くしたもの） -->
+  <rect width="512" height="512" rx="112" fill="#1f2a37"/>
+  <path d="M70 190V122q0-52 52-52h68M322 70h68q52 0 52 52v68M442 322v68q0 52-52 52h-68M190 442h-68q-52 0-52-52v-68"
+        fill="none" stroke="#e8e6e1" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/>
+  <g transform="rotate(40 256 256) translate(256 256) scale(1.2) translate(-252 -276)" fill="#f2b134">
+    <path fill-rule="evenodd" d="M136 214a62 62 0 1 1 0 124a62 62 0 1 1 0-124zm0 34a28 28 0 1 0 0 56a28 28 0 1 0 0-56z"/>
+    <rect x="186" y="252" width="182" height="48" rx="14"/>
+    <rect x="290" y="290" width="34" height="44" rx="8"/>
+    <rect x="336" y="290" width="32" height="58" rx="8"/>
+  </g>
+</svg>

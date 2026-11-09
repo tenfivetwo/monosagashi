@@ -24,6 +24,19 @@ node tools/serve.mjs
 
 http://127.0.0.1:8750/ を開く。スマホのカメラは https でないと使えないので、スマホで試すには https の場所へ置く必要がある（GitHub Pages など）。
 
+## アイコン
+
+- 絵は `icon.svg`（カメラの枠の中で鍵が見つかった図）。ブラウザのタブ用は、印と光を省いて線を太くした `favicon.svg`。
+- スマホのホーム画面用などの PNG は `icons/` にある。絵を変えたら、次のコマンドで出る URL をブラウザで開いて作り直す。
+
+```bash
+cd C:\add\claudecode\monosagashi
+```
+
+```bash
+node tools/make-icons.mjs
+```
+
 ## 仕組み
 
 - 画像AI DINOv2 small（量子化版 24MB）を onnxruntime-web でブラウザ内で動かす（`js/worker.js`）
