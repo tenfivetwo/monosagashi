@@ -2,6 +2,56 @@
 
 const MAX_FG_PER_VIEW = 220;
 const MAX_BG = 400;
+const MAX_BG_HEAD = 1500; // 判定役の学習に使う「違う側」のマスの上限
+
+// 判定役：マスの特徴から「この品物か、そうでないか」を出す小さな仕組み（ロジスティック回帰）。
+// 登録写真・見つかったときの姿の枠の中を「品物」、枠の外と「違う」と教わった所を「違う物」として学習する。
+// mapMix：似ている場所の地図に混ぜる割合、scoreWeight：最後の点に足す重み。値は test/head-bench.js の結果から決めた。
+// 試験では、登録写真だけのときは地図に混ぜると正しい場所を指しやすくなったが、「これだ！」で覚えた姿があるときは
+// 判定役なしの方が良かった。最後の点に足すと点全体が上がり、境目の決め方とずれるので足さない（0）
+export const HEAD = { mapMix: 0.5, scoreWeight: 0, center: 0.5, epochs: 120, rate: 2, momentum: 0.9, l2: 0.002 };
+
+function sigmoid(z) { return 1 / (1 + Math.exp(-z)); }
+
+// 正解側と違う側の数の差は重みでならす（違う側が多いと「全部違う」と答える癖がつくため）
+function trainHead(pos, posN, neg, negN, dim) {
+  const w = new Float32Array(dim);
+  let b = 0;
+  if (posN === 0 || negN === 0) return null;
+  const vw = new Float64Array(dim);
+  let vb = 0;
+  const gw = new Float64Array(dim);
+  const wp = 0.5 / posN;
+  const wn = 0.5 / negN;
+  const t0 = performance.now();
+  for (let ep = 0; ep < HEAD.epochs; ep++) {
+    gw.fill(0);
+    let gb = 0;
+    for (const [mat, n, y, k] of [[pos, posN, 1, wp], [neg, negN, 0, wn]]) {
+      for (let i = 0; i < n; i++) {
+        const o = i * dim;
+        let z = b;
+        for (let d = 0; d < dim; d++) z += w[d] * mat[o + d];
+        const err = (sigmoid(z) - y) * k;
+        for (let d = 0; d < dim; d++) gw[d] += err * mat[o + d];
+        gb += err;
+      }
+    }
+    for (let d = 0; d < dim; d++) {
+      vw[d] = HEAD.momentum * vw[d] - HEAD.rate * (gw[d] + HEAD.l2 * w[d]);
+      w[d] += vw[d];
+    }
+    vb = HEAD.momentum * vb - HEAD.rate * gb;
+    b += vb;
+  }
+  return { w, b, ms: performance.now() - t0 };
+}
+
+function headProb(head, row, dim) {
+  let z = head.b;
+  for (let d = 0; d < dim; d++) z += head.w[d] * row[d];
+  return sigmoid(z);
+}
 
 // rows 行 dim 列の特徴から、等間隔に max 行だけ抜き出す
 function thin(rows, count, dim, max) {
@@ -55,7 +105,8 @@ function maxDot(row, mat, count, dim) {
 
 // 登録写真の特徴から、探すときに使う手本を作る
 // views: [{ crop: 枠内を拡大した特徴, whole: 写真全体の特徴, box: 枠（0〜1） }]
-export function buildProfile(views, extraNegatives = []) {
+// opts.head：判定役を使うか（覚えた姿があるときは使わない。app.js が決める）
+export function buildProfile(views, extraNegatives = [], opts = {}) {
   const dim = views[0].crop.dim;
   const bgLists = [];
   for (const v of views) {
@@ -87,13 +138,19 @@ export function buildProfile(views, extraNegatives = []) {
   const negAll = concat(extraNegatives.slice(-10));
   const negatives = thin(negAll, negAll.length / dim, dim, 640);
 
+  const fgAll = concat(outViews.map((v) => v.fg));
+  const fgCount = outViews.reduce((s, v) => s + v.count, 0);
+  const headNeg = concat([thin(bgAll, bgCount, dim, MAX_BG_HEAD), negatives]);
+  const head = opts.head === false ? null : trainHead(fgAll, fgCount, headNeg, headNeg.length / dim, dim);
+
   return {
     dim,
     cls,
     clsCount: views.length,
     views: outViews,
-    fgAll: concat(outViews.map((v) => v.fg)),
-    fgCount: outViews.reduce((s, v) => s + v.count, 0),
+    fgAll,
+    fgCount,
+    head,
     bg,
     bgCount: bgN,
     negatives,
@@ -106,7 +163,8 @@ export function scoreMap(frame, profile) {
   const { gw, gh, patches, dim } = frame;
   const n = gw * gh;
   const map = new Float32Array(n);
-  const { fgAll, fgCount, bg, bgCount } = profile;
+  const { fgAll, fgCount, bg, bgCount, head } = profile;
+  const mix = head ? HEAD.mapMix : 0;
   for (let i = 0; i < n; i++) {
     const row = patches.subarray(i * dim, (i + 1) * dim);
     let a = -1;
@@ -121,7 +179,8 @@ export function scoreMap(frame, profile) {
     const fg = (a + b + c) / 3;
     const bgBest = bgCount > 0 ? maxDot(row, bg, bgCount, dim) : 0;
     // 背景の方に似ているマスは減点する
-    map[i] = fg - 0.5 * Math.max(0, bgBest - fg);
+    const sim = fg - 0.5 * Math.max(0, bgBest - fg);
+    map[i] = mix > 0 ? (1 - mix) * sim + mix * headProb(head, row, dim) : sim;
   }
   return map;
 }
@@ -237,11 +296,21 @@ export function verifyCrop(crop, profile) {
     // 「違う」と教えてもらった物に、手本と同じくらい似ているマスを数える
     if (profile.negCount > 0 && maxDot(row, profile.negatives, profile.negCount, dim) >= fgBest[i] - 0.03) negWin++;
   }
+  const quarter = Math.max(1, Math.floor(n / 4));
   const sorted = Array.from(fgBest).sort((a, b) => b - a);
-  const top = sorted.slice(0, Math.max(1, Math.floor(n / 4)));
+  const top = sorted.slice(0, quarter);
   const precision = top.reduce((s, v) => s + v, 0) / top.length;
 
-  return { clsSim, coverage, precision, bgShare: bgWin / n, negShare: negWin / n };
+  // 判定役が「品物」と見たマス（上位4分の1の平均）
+  let headTop = null;
+  if (profile.head) {
+    const probs = new Float32Array(n);
+    for (let i = 0; i < n; i++) probs[i] = headProb(profile.head, patches.subarray(i * dim, (i + 1) * dim), dim);
+    const ps = Array.from(probs).sort((a, b) => b - a).slice(0, quarter);
+    headTop = ps.reduce((s, v) => s + v, 0) / ps.length;
+  }
+
+  return { clsSim, coverage, precision, bgShare: bgWin / n, negShare: negWin / n, headTop };
 }
 
 // 「違う」と言われた切り抜きの特徴を、覚えておける大きさに減らす
@@ -252,7 +321,8 @@ export function negativeFrom(cropPatches, count, dim) {
 // 確かめた結果を1つの点にまとめる。重みは test/bench.js の結果から決めた
 export function finalScore(v) {
   // 「違う」と教えられた物に似ているほど下げる
-  return 0.3 * v.clsSim + 0.7 * v.coverage - 0.6 * v.negShare;
+  const base = 0.3 * v.clsSim + 0.7 * v.coverage - 0.6 * v.negShare;
+  return v.headTop == null ? base : base + HEAD.scoreWeight * (v.headTop - HEAD.center);
 }
 
 // 感度ごとの境目。部屋を調べ続けて点の普段の高さが分かったら、低い部屋では境目も下げる

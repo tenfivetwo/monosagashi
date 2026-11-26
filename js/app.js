@@ -423,6 +423,9 @@ function beep(freq, ms) {
   } catch { /* 音が出なくても続ける */ }
 }
 
+// 判定役（matcher.js）は、覚えた姿がまだないときだけ使う（試験でその方が良かったため）
+function useHead(item) { return !item.photos.some((p) => p.learned); }
+
 async function startSearch(id) {
   try {
     const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -458,7 +461,7 @@ async function startSearch(id) {
   markSens();
   try {
     await ensureEngine();
-    my.profile = buildProfile(item.views, item.negatives || []);
+    my.profile = buildProfile(item.views, item.negatives || [], { head: useHead(item) });
   } catch (e) {
     $('status').textContent = 'AI を準備できませんでした：' + e.message;
     return;
@@ -621,7 +624,7 @@ async function answerNo() {
     try {
       const negative = await embedNegative(my.foundFrame || $('foundCanvas'), my.current.box);
       item.negatives = [...(item.negatives || []), negative];
-      my.profile = buildProfile(item.views, item.negatives);
+      my.profile = buildProfile(item.views, item.negatives, { head: useHead(item) });
       await saveItem(item);
     } catch { /* 覚えられなくても探索は続ける */ }
   }
