@@ -84,6 +84,11 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--warn); outl
 .thumbs { display: flex; gap: 8px; flex-wrap: wrap; }
 .thumb { position: relative; width: 84px; height: 84px; }
 .thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; display: block; }
+.thumb.learned img { outline: 3px solid var(--accent); outline-offset: -3px; }
+.thumb .tag {
+  position: absolute; left: 4px; bottom: 4px; background: var(--accent); color: var(--accent-ink);
+  font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 6px;
+}
 .thumb button {
   position: absolute; top: -6px; right: -6px; min-height: 28px; width: 28px; padding: 0;
   background: var(--ink); color: var(--bg); border-radius: 50%; line-height: 1;

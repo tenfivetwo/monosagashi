@@ -10,7 +10,8 @@ const CORNERS = [
   { x: 0, y: 0, w: 0.55, h: 0.55 }, { x: 0.45, y: 0, w: 0.55, h: 0.55 },
   { x: 0, y: 0.45, w: 0.55, h: 0.55 }, { x: 0.45, y: 0.45, w: 0.55, h: 0.55 },
 ];
-const MAX_PHOTOS = 6;
+const MAX_PHOTOS = 6; // 自分で撮る写真
+const MAX_LEARNED = 4; // 「これだ！」で覚える、見つかったときの姿（古いものから入れ替える）
 const PHOTO_LONG = 1024;
 
 const $ = (id) => document.getElementById(id);
@@ -63,7 +64,8 @@ async function renderHome() {
     name.textContent = item.name;
     const sub = document.createElement('div');
     sub.className = 'itemSub';
-    sub.textContent = '写真 ' + item.photos.length + ' 枚';
+    const learned = item.photos.filter((p) => p.learned).length;
+    sub.textContent = '写真 ' + (item.photos.length - learned) + ' 枚' + (learned ? '・覚えた姿 ' + learned + ' 枚' : '');
     const edit = document.createElement('button');
     edit.type = 'button';
     edit.className = 'link';
@@ -118,7 +120,7 @@ async function startEdit(id) {
       thumb = makeThumb(bmp, bmp.width, bmp.height, p.box);
       bmp.close();
     } catch { /* 見本が作れなくても続ける */ }
-    photos.push({ saved: p, view: item.views[i], thumb });
+    photos.push({ saved: p, view: item.views[i], thumb, learned: !!p.learned });
   }
   draft = { item, photos, changed: false };
   $('regTitle').textContent = '写真を足す・直す';
@@ -134,8 +136,15 @@ function renderDraft() {
     const d = document.createElement('div');
     d.className = 'thumb';
     const img = document.createElement('img');
-    img.alt = (i + 1) + '枚目';
+    img.alt = (i + 1) + '枚目' + (p.learned ? '（見つけたときに覚えた姿）' : '');
     img.src = p.thumb;
+    if (p.learned) {
+      d.classList.add('learned');
+      const tag = document.createElement('span');
+      tag.className = 'tag';
+      tag.textContent = '覚えた';
+      d.append(tag);
+    }
     const x = document.createElement('button');
     x.type = 'button';
     x.textContent = '×';
@@ -144,11 +153,13 @@ function renderDraft() {
     d.append(img, x);
     wrap.append(d);
   });
-  const n = draft.photos.length;
+  const learned = draft.photos.filter((p) => p.learned).length;
+  const n = draft.photos.length - learned; // 自分で撮った写真の数
   const added = draft.photos.filter((p) => !p.saved).length;
-  $('regSave').disabled = n === 0;
+  $('regSave').disabled = draft.photos.length === 0;
   $('regCamera').disabled = n >= MAX_PHOTOS;
   $('regPick').disabled = n >= MAX_PHOTOS;
+  $('regLearned').hidden = learned === 0;
   $('regHint').textContent = n >= MAX_PHOTOS
     ? '写真は ' + MAX_PHOTOS + ' 枚までです。足すときは、どれかを × で外してください。'
     : n === 0
@@ -578,6 +589,12 @@ function judge(my, scan, frame) {
 function showFound(my, top, frame) {
   my.paused = true;
   my.current = top;
+  // 印を描く前の映像を取っておく（「これだ！」で覚える・「違う」で覚えるときに使う）
+  const clean = document.createElement('canvas');
+  clean.width = frame.width;
+  clean.height = frame.height;
+  clean.getContext('2d').drawImage(frame, 0, 0);
+  my.foundFrame = clean;
   try { if (navigator.vibrate) navigator.vibrate([120, 60, 120]); } catch { /* 任意 */ }
   beep(880, 120);
   setTimeout(() => beep(1175, 160), 140);
@@ -602,7 +619,7 @@ async function answerNo() {
     // この枠のあたりを「違う物」として覚える（次回の探索にも残す）
     const item = my.item;
     try {
-      const negative = await embedNegative($('foundCanvas'), my.current.box);
+      const negative = await embedNegative(my.foundFrame || $('foundCanvas'), my.current.box);
       item.negatives = [...(item.negatives || []), negative];
       my.profile = buildProfile(item.views, item.negatives);
       await saveItem(item);
@@ -613,6 +630,26 @@ async function answerNo() {
   my.paused = false;
   clearOverlay();
   $('status').textContent = my.video ? 'ゆっくり動かしてください' : '写真で試せます';
+}
+
+// 「これだ！」のとき、見つかったときの姿を見本に足す。部屋の明るさや遠さで映った姿なので、次に探すときの手がかりになる
+async function learnFound(my) {
+  const top = my.current;
+  const frame = my.foundFrame;
+  if (!top || !frame) return false;
+  const view = await embedView(frame, top.box);
+  const blob = await canvasToBlob(frame, 0.85);
+  const item = await getItem(my.item.id);
+  if (!item) return false;
+  const photos = [...item.photos, { blob, box: { ...top.box }, w: frame.width, h: frame.height, learned: true, at: Date.now() }];
+  const views = [...item.views, view];
+  while (photos.filter((p) => p.learned).length > MAX_LEARNED) {
+    const i = photos.findIndex((p) => p.learned);
+    photos.splice(i, 1);
+    views.splice(i, 1);
+  }
+  await saveItem({ ...item, photos, views });
+  return true;
 }
 
 // ---------- 写真で試す（カメラがないPCでも確かめられる） ----------
@@ -757,10 +794,16 @@ function bind() {
     ev.target.value = '';
     if (f) tryStill(f).catch((e) => toast('試せませんでした：' + e.message));
   };
-  $('foundYes').onclick = () => {
-    const name = session ? session.item.name : '';
+  $('foundYes').onclick = async () => {
+    const my = session;
+    const name = my ? my.item.name : '';
+    const learning = my ? learnFound(my).catch(() => false) : Promise.resolve(false);
     endSearch();
     toast('「' + name + '」が見つかりました！');
+    if (await learning) {
+      toast('「' + name + '」が見つかりました！ 見つかったときの姿を覚えました（次から見つけやすくなります）。');
+      if (!$('home').hidden) renderHome();
+    }
   };
   $('foundNo').onclick = answerNo;
   document.addEventListener('visibilitychange', async () => {
@@ -774,4 +817,4 @@ bind();
 renderHome().catch((e) => toast('起動できませんでした：' + e.message));
 
 // 開発用（ブラウザの開発ツールから写真で試すときに使う）。本番の動きには影響しない
-window.__monosagashi = { tryStill, pickerToCanvas, openCrop, acceptCrop, saveDraft, startRegister, startEdit, startSearch };
+window.__monosagashi = { tryStill, pickerToCanvas, openCrop, acceptCrop, saveDraft, startRegister, startEdit, startSearch, learnFound, session: () => session };
