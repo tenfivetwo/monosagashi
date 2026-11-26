@@ -64,7 +64,13 @@ async function renderHome() {
     const sub = document.createElement('div');
     sub.className = 'itemSub';
     sub.textContent = '写真 ' + item.photos.length + ' 枚';
-    body.append(name, sub);
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'link';
+    edit.textContent = '写真を足す・直す';
+    edit.onclick = () => startEdit(item.id);
+    body.append(name, sub, edit);
+    img.onclick = () => startEdit(item.id);
     const actions = document.createElement('div');
     actions.className = 'itemActions';
     const del = document.createElement('button');
@@ -92,8 +98,31 @@ async function renderHome() {
 let draft = null;
 
 function startRegister() {
-  draft = { photos: [] };
+  draft = { item: null, photos: [], changed: false };
+  $('regTitle').textContent = '品物の登録';
   $('regName').value = '';
+  renderDraft();
+  show('register');
+}
+
+// 登録済みの品物に写真を足す・外す。前からある写真の読み取り結果はそのまま使う
+async function startEdit(id) {
+  const item = await getItem(id);
+  if (!item) { toast('品物が見つかりません。'); return; }
+  const photos = [];
+  for (let i = 0; i < item.photos.length; i++) {
+    const p = item.photos[i];
+    let thumb = '';
+    try {
+      const bmp = await createImageBitmap(p.blob);
+      thumb = makeThumb(bmp, bmp.width, bmp.height, p.box);
+      bmp.close();
+    } catch { /* 見本が作れなくても続ける */ }
+    photos.push({ saved: p, view: item.views[i], thumb });
+  }
+  draft = { item, photos, changed: false };
+  $('regTitle').textContent = '写真を足す・直す';
+  $('regName').value = item.name;
   renderDraft();
   show('register');
 }
@@ -111,17 +140,24 @@ function renderDraft() {
     x.type = 'button';
     x.textContent = '×';
     x.setAttribute('aria-label', (i + 1) + '枚目を外す');
-    x.onclick = () => { draft.photos.splice(i, 1); renderDraft(); };
+    x.onclick = () => { draft.photos.splice(i, 1); draft.changed = true; renderDraft(); };
     d.append(img, x);
     wrap.append(d);
   });
   const n = draft.photos.length;
+  const added = draft.photos.filter((p) => !p.saved).length;
   $('regSave').disabled = n === 0;
   $('regCamera').disabled = n >= MAX_PHOTOS;
   $('regPick').disabled = n >= MAX_PHOTOS;
-  $('regHint').textContent = n === 0
-    ? '違う向きから3〜5枚撮っておくと、どの向きで転がっていても見つけやすくなります。'
-    : n < 3 ? 'あと ' + (3 - n) + ' 枚、別の向きから撮ると見つけやすくなります（1枚でも保存はできます）。' : n + ' 枚撮りました。';
+  $('regHint').textContent = n >= MAX_PHOTOS
+    ? '写真は ' + MAX_PHOTOS + ' 枚までです。足すときは、どれかを × で外してください。'
+    : n === 0
+      ? '違う向きから3〜5枚撮っておくと、どの向きで転がっていても見つけやすくなります。'
+      : n < 3
+        ? 'あと ' + (3 - n) + ' 枚、別の向きから撮ると見つけやすくなります（1枚でも保存はできます）。'
+        : draft.item && added === 0
+          ? '今は ' + n + ' 枚です。まだ撮っていない向きや、置きそうな場所の明るさで撮って足せます。'
+          : n + ' 枚撮りました。';
 }
 
 // カメラ
@@ -291,23 +327,29 @@ function canvasToBlob(c, q) {
   return new Promise((res) => c.toBlob(res, 'image/jpeg', q));
 }
 
+// 枠のあたりを正方形に切り抜いた小さな見本
+function makeThumb(source, srcW, srcH, box) {
+  const t = document.createElement('canvas');
+  t.width = 168;
+  t.height = 168;
+  const side = Math.max(box.w * srcW, box.h * srcH);
+  const sx = box.x * srcW + (box.w * srcW - side) / 2;
+  const sy = box.y * srcH + (box.h * srcH - side) / 2;
+  const tg = t.getContext('2d');
+  tg.fillStyle = '#000';
+  tg.fillRect(0, 0, 168, 168);
+  tg.drawImage(source, sx, sy, side, side, 0, 0, 168, 168);
+  return t.toDataURL('image/jpeg', 0.8);
+}
+
 async function acceptCrop() {
   const { photo, box } = cropState;
   if (box.w * photo.width < 28 || box.h * photo.height < 28) {
     toast('枠が小さすぎます。もう少し広げてください。');
     return;
   }
-  const t = document.createElement('canvas');
-  t.width = 168;
-  t.height = 168;
-  const side = Math.max(box.w * photo.width, box.h * photo.height);
-  const sx = box.x * photo.width + (box.w * photo.width - side) / 2;
-  const sy = box.y * photo.height + (box.h * photo.height - side) / 2;
-  const tg = t.getContext('2d');
-  tg.fillStyle = '#000';
-  tg.fillRect(0, 0, 168, 168);
-  tg.drawImage(photo, sx, sy, side, side, 0, 0, 168, 168);
-  draft.photos.push({ canvas: photo, box: { ...box }, thumb: t.toDataURL('image/jpeg', 0.8) });
+  draft.photos.push({ canvas: photo, box: { ...box }, thumb: makeThumb(photo, photo.width, photo.height, box) });
+  draft.changed = true;
   cropState = null;
   renderDraft();
   show('register');
@@ -318,20 +360,30 @@ async function saveDraft() {
   btn.disabled = true;
   try {
     await ensureEngine();
-    const name = $('regName').value.trim() || '品物 ' + new Date().toLocaleDateString('ja-JP');
+    const old = draft.item;
+    const name = $('regName').value.trim() || (old ? old.name : '品物 ' + new Date().toLocaleDateString('ja-JP'));
     btn.textContent = '読み取り中…';
     const views = [];
     const photos = [];
-    for (let i = 0; i < draft.photos.length; i++) {
-      btn.textContent = '読み取り中… ' + (i + 1) + '/' + draft.photos.length;
-      const p = draft.photos[i];
+    const fresh = draft.photos.filter((p) => !p.saved).length;
+    let done = 0;
+    for (const p of draft.photos) {
+      if (p.saved) {
+        views.push(p.view);
+        photos.push(p.saved);
+        continue;
+      }
+      btn.textContent = '読み取り中… ' + (++done) + '/' + fresh;
       views.push(await embedView(p.canvas, p.box));
       photos.push({ blob: await canvasToBlob(p.canvas, 0.85), box: p.box, w: p.canvas.width, h: p.canvas.height });
     }
-    await saveItem({
-      id: String(Date.now()) + '-' + Math.random().toString(36).slice(2, 8),
-      name, createdAt: Date.now(), photos, views, negatives: [],
-    });
+    await saveItem(old
+      ? { ...old, name, photos, views }
+      : {
+        id: String(Date.now()) + '-' + Math.random().toString(36).slice(2, 8),
+        name, createdAt: Date.now(), photos, views, negatives: [],
+      });
+    if (old) toast('「' + name + '」の写真を ' + photos.length + ' 枚にしました。');
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch { /* 任意 */ }
     draft = null;
     renderHome();
@@ -669,7 +721,7 @@ function pickerToCanvas(file) {
 function bind() {
   $('addBtn').onclick = startRegister;
   $('regBack').onclick = () => {
-    if (draft && draft.photos.length && !window.confirm('撮った写真を捨てて戻りますか？')) return;
+    if (draft && draft.changed && !window.confirm(draft.item ? '足した写真・外した写真を取り消して戻りますか？' : '撮った写真を捨てて戻りますか？')) return;
     draft = null;
     renderHome();
   };
@@ -722,4 +774,4 @@ bind();
 renderHome().catch((e) => toast('起動できませんでした：' + e.message));
 
 // 開発用（ブラウザの開発ツールから写真で試すときに使う）。本番の動きには影響しない
-window.__monosagashi = { tryStill, pickerToCanvas, openCrop, acceptCrop, saveDraft, startRegister, startSearch };
+window.__monosagashi = { tryStill, pickerToCanvas, openCrop, acceptCrop, saveDraft, startRegister, startEdit, startSearch };

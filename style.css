@@ -77,6 +77,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--warn); outl
 .itemBody { flex: 1; min-width: 0; }
 .itemName { font-weight: 700; overflow-wrap: anywhere; }
 .itemSub { color: var(--sub); font-size: 13px; }
+.item img { cursor: pointer; }
+.link { background: none; border: 0; padding: 4px 0; min-height: 32px; color: var(--accent); font-size: 14px; text-decoration: underline; text-underline-offset: 3px; }
 .itemActions { display: flex; gap: 4px; flex: none; align-items: center; }
 
 .thumbs { display: flex; gap: 8px; flex-wrap: wrap; }
