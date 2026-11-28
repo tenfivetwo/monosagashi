@@ -32,6 +32,15 @@
       </ol>
     </div>
     <p class="note">写真も判定も、この端末の中だけで済みます。外へは送りません。<br>隠れている物（引き出しの中など）はカメラに映らないので見つけられません。</p>
+    <section class="backup">
+      <h2>バックアップ</h2>
+      <p class="note">登録した品物（写真・覚えた姿・「違う」で教えたこと）を1つのファイルにして保存できます。機種変更や、ブラウザのデータを消す前に。ファイルは自分で保存先を選び、どこへも自動では送りません。</p>
+      <div class="row">
+        <button id="exportBtn" class="secondary" type="button">ファイルに書き出す</button>
+        <button id="importBtn" class="secondary" type="button">ファイルから戻す</button>
+        <input id="importFile" type="file" accept=".json,application/json" hidden>
+      </div>
+    </section>
   </main>
   <div class="foot"><button id="addBtn" class="primary wide" type="button">＋ 品物を登録する</button></div>
 </section>

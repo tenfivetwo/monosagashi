@@ -3,6 +3,7 @@ import { loadEngine } from './engine.js';
 import { embedView, embedNegative, buildProfile, scanRegion, WHOLE_LONG } from './scan.js';
 import { SENSITIVITY, thresholdFor } from './matcher.js';
 import { listItems, getItem, saveItem, deleteItem } from './store.js';
+import { toBackup, parseBackup, backupFileName } from './backup.js';
 
 const FULL = { x: 0, y: 0, w: 1, h: 1 };
 const CENTER = { x: 0.22, y: 0.22, w: 0.56, h: 0.56 };
@@ -690,6 +691,85 @@ async function tryStill(file) {
   }
 }
 
+// ---------- バックアップ ----------
+async function exportBackup() {
+  const items = await listItems();
+  if (items.length === 0) { toast('まだ品物が登録されていません。'); return; }
+  const btn = $('exportBtn');
+  btn.disabled = true;
+  try {
+    const data = await toBackup(items);
+    const file = new File([JSON.stringify(data)], backupFileName(), { type: 'application/json' });
+    // スマホでは共有の画面から保存先（ファイル・ドライブなど）を選べる。使えないときはダウンロード
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: '物探しカメラのバックアップ' });
+        toast(items.length + ' 件を書き出しました。');
+        return;
+      } catch (e) {
+        if (e && e.name === 'AbortError') return; // やめた
+      }
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(file);
+    a.download = file.name;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    toast(items.length + ' 件を「' + file.name + '」に書き出しました。');
+  } catch (e) {
+    toast('書き出せませんでした：' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function importBackup(file) {
+  let items;
+  try {
+    items = parseBackup(await file.text());
+  } catch (e) {
+    toast('戻せませんでした：' + e.message);
+    return;
+  }
+  if (items.length === 0) { toast('ファイルに品物が入っていません。'); return; }
+  const now = await listItems();
+  const same = items.filter((it) => now.some((n) => n.id === it.id)).length;
+  const msg = items.length + ' 件の品物を戻します。'
+    + (same ? '\nそのうち ' + same + ' 件は今もあるので、ファイルの内容で置き換えます。' : '')
+    + '\n写真を AI で読み取り直すので、少し時間がかかります。';
+  if (!window.confirm(msg)) return;
+  const total = items.reduce((n, it) => n + it.photos.length, 0);
+  let done = 0;
+  try {
+    await ensureEngine();
+    $('loading').hidden = false;
+    for (const it of items) {
+      const views = [];
+      for (const p of it.photos) {
+        $('loadingText').textContent = '戻しています… ' + (done + 1) + '/' + total + ' 枚';
+        $('loadingBar').style.width = Math.round((done / total) * 100) + '%';
+        const bmp = await createImageBitmap(p.blob);
+        try {
+          views.push(await embedView(bmp, p.box));
+        } finally {
+          bmp.close();
+        }
+        done++;
+      }
+      await saveItem({ ...it, views });
+    }
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch { /* 任意 */ }
+    toast(items.length + ' 件の品物を戻しました。');
+  } catch (e) {
+    toast('途中で止まりました（' + done + '/' + total + ' 枚）：' + e.message);
+  } finally {
+    $('loading').hidden = true;
+    renderHome();
+  }
+}
+
 // ---------- 重ね描き ----------
 function overlayContext() {
   const c = $('overlay');
@@ -760,6 +840,13 @@ function pickerToCanvas(file) {
 
 function bind() {
   $('addBtn').onclick = startRegister;
+  $('exportBtn').onclick = exportBackup;
+  $('importBtn').onclick = () => $('importFile').click();
+  $('importFile').onchange = (ev) => {
+    const f = ev.target.files[0];
+    ev.target.value = '';
+    if (f) importBackup(f);
+  };
   $('regBack').onclick = () => {
     if (draft && draft.changed && !window.confirm(draft.item ? '足した写真・外した写真を取り消して戻りますか？' : '撮った写真を捨てて戻りますか？')) return;
     draft = null;
@@ -820,4 +907,4 @@ bind();
 renderHome().catch((e) => toast('起動できませんでした：' + e.message));
 
 // 開発用（ブラウザの開発ツールから写真で試すときに使う）。本番の動きには影響しない
-window.__monosagashi = { tryStill, pickerToCanvas, openCrop, acceptCrop, saveDraft, startRegister, startEdit, startSearch, learnFound, session: () => session };
+window.__monosagashi = { tryStill, pickerToCanvas, openCrop, acceptCrop, saveDraft, startRegister, startEdit, startSearch, learnFound, exportBackup, importBackup, session: () => session };
