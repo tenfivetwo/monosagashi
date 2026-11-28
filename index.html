@@ -6,11 +6,13 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' blob: data:; media-src 'self' blob: mediastream:; connect-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; worker-src 'self' blob:; base-uri 'none'; form-action 'none'">
 <meta name="theme-color" content="#1f2a37">
 <title>物探しカメラ</title>
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="favicon.svg" type="image/svg+xml">
-<link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
-<link rel="icon" href="icons/favicon-16.png" sizes="16x16" type="image/png">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<!-- アイコンの ?v= は、絵を変えたら上げる（tools/make-icons.mjs が書き出しのときに自動で上げる）。
+     アドレスが同じだと、iPhone の Safari やホーム画面のアプリが古いアイコンを使い続けるため -->
+<link rel="manifest" href="manifest.webmanifest?v=2026112801">
+<link rel="icon" href="favicon.svg?v=2026112801" type="image/svg+xml">
+<link rel="icon" href="icons/favicon-32.png?v=2026112801" sizes="32x32" type="image/png">
+<link rel="icon" href="icons/favicon-16.png?v=2026112801" sizes="16x16" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=2026112801">
 <link rel="stylesheet" href="style.css">
 <script src="js/coi.js"></script>
 </head>
