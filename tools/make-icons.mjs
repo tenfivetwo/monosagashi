@@ -1,6 +1,8 @@
 // icon.svg から PNG のアイコンを作る道具。
 // 使い方：node tools/make-icons.mjs  → 表示された URL をブラウザで開くと、icons/ に PNG を書き出す。
 // 絵（icon.svg・favicon.svg）を変えたら、これで PNG も作り直す。
+// 書き出し終わると、index.html と manifest.webmanifest のアイコンの ?v= を今の日時に上げる
+// （アドレスが変わらないと、iPhone やホーム画面のアプリが古いアイコンを使い続けるため）。
 import { createServer } from 'node:http';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -47,7 +49,8 @@ const TARGETS = ${JSON.stringify(TARGETS)};
     c.title = t.name; c.style.margin = '8px'; c.style.verticalAlign = 'top';
     document.getElementById('out').append(c);
   }
-  document.getElementById('msg').textContent = '書き出しました：' + TARGETS.map(t => t.name).join('、');
+  const v = await (await fetch('/bump', { method: 'POST' })).text();
+  document.getElementById('msg').textContent = '書き出しました：' + TARGETS.map(t => t.name).join('、') + '（?v=' + v + ' に上げました）';
 })().catch(e => { document.getElementById('msg').textContent = '失敗：' + e.message; });
 </script>`;
 
@@ -66,6 +69,17 @@ createServer(async (req, res) => {
       await writeFile(path.join(outDir, url.searchParams.get('name')), Buffer.concat(chunks));
       console.log('書き出し:', url.searchParams.get('name'));
       res.writeHead(204).end();
+    } else if (req.method === 'POST' && url.pathname === '/bump') {
+      const d = new Date();
+      const p2 = (n) => String(n).padStart(2, '0');
+      const v = '' + d.getFullYear() + p2(d.getMonth() + 1) + p2(d.getDate()) + p2(d.getHours()) + p2(d.getMinutes());
+      for (const name of ['index.html', 'manifest.webmanifest']) {
+        const file = path.join(root, name);
+        const text = await readFile(file, 'utf8');
+        await writeFile(file, text.replace(/\?v=\d+/g, '?v=' + v));
+      }
+      console.log('?v= を上げました:', v);
+      res.writeHead(200, { 'content-type': 'text/plain' }).end(v);
     } else {
       res.writeHead(404).end();
     }
